@@ -1,0 +1,4 @@
+- Compute Die
+ -  8 个
+ -  128 TFLOPS
+ -  128 GB/s

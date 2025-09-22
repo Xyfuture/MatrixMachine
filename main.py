@@ -1,0 +1,68 @@
+from Desim.Core import SimSession
+from matrixmachine.description import (
+    MatrixShape,
+    Tile,
+    ComputeDieSpec,
+    ComputeDie,
+    ChipSpec,
+    Chip,
+    Mapping,
+)
+from matrixmachine.strategy.trivial import GridTilingStrategy
+from matrixmachine.sim_engine import SimChip
+
+
+def sim_test():
+    SimSession.reset()
+    SimSession.init()
+    # Create a matrix shape (4096x4096)
+    matrix_shape = MatrixShape(rows=4096, cols=4096)
+    print(f"Matrix shape: {matrix_shape.rows}x{matrix_shape.cols}")
+    print(f"Matrix area: {matrix_shape.area()}")
+
+    # Create compute dies specification
+    die_spec = ComputeDieSpec(
+        compute_power=128,  # 128 TFLOPS
+        input_bandwidth=128,  # 128 GB/s
+        output_bandwidth=128,  # 128 GB/s
+    )
+
+    # Create a chip with 3 compute dies
+    chip_spec = ChipSpec(die_count=8, die_spec=die_spec)
+    chip = Chip.create_from_spec(chip_spec)
+
+    print(f"Chip configuration:")
+    print(f"  Number of dies: {len(chip.compute_dies)}")
+    print(f"  Total compute power: {chip.total_compute_power} TFLOPS")
+    print(f"  Total bandwidth: {chip.total_bandwidth} GB/s")
+    print()
+
+    # Create grid tiling strategy
+    strategy = GridTilingStrategy()
+
+    # Create mapping using balanced strategy
+    mapping = strategy.create_balanced_mapping(matrix_shape, chip)
+
+    print("Tile distribution:")
+    for die_id, tiles in mapping.placement.items():
+        total_area = sum(tile.area for tile in tiles)
+        print(f"  {die_id}: {len(tiles)} tiles, total area: {total_area}")
+        for tile in tiles:
+            print(f"    {tile.tile_id}: [{tile.row0}:{tile.row1}, {tile.col0}:{tile.col1}]")
+    print()
+
+    # Validation
+    print("Validation Summary:")
+    print(f"Number of tiles: {len(mapping.tiles)}")
+    print(f"Validation passed: {mapping.check_bidirectional_mapping()}")
+
+    # Create and run simulation
+    print("Starting simulation...")
+    sim_chip = SimChip(chip=chip, mapping=mapping, fifo_size=10)
+    sim_chip.run_sim()
+    print("Simulation completed! Trace file saved as 'trace.json'")
+    print("View the trace at: ui.perfetto.dev")
+
+
+if __name__ == "__main__":
+    sim_test()
