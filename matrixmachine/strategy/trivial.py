@@ -37,7 +37,7 @@ class TrivialTilingStrategy:
         for row0, row1 in row_bounds:
             for col0, col1 in col_bounds:
                 die_id = die_ids[tile_index % len(die_ids)]
-                mapping.add_tile(die_id, row0, row1, col0, col1)
+                mapping.add_tile(die_id, row0, row1, col0, col1, batch0=0, batch1=matrix_shape.batch_size)
                 tile_index += 1
 
         mapping.check_all()
@@ -53,12 +53,12 @@ class TrivialTilingStrategy:
             raise ValueError("Chip must have at least one compute die")
 
         num_dies = len(chip.compute_dies)
-        matrix_area = matrix_shape.area()
+        matrix_volume = matrix_shape.volume()
 
         if max_tile_area is None:
             target_tiles = max(1, num_dies)
         else:
-            target_tiles = max(num_dies, ceil(matrix_area / max_tile_area))
+            target_tiles = max(num_dies, ceil(matrix_volume / max_tile_area))
 
         grid_rows, grid_cols = self._derive_grid(matrix_shape, target_tiles)
         return self.create_mapping(matrix_shape, chip, grid_rows, grid_cols)

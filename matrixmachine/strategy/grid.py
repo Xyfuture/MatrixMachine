@@ -35,7 +35,7 @@ from ..description import Chip, Mapping, MatrixShape, Tile
 from ..sim_engine import simulate
 
 
-GridSize = Tuple[int, int]  # (tile_height, tile_width)
+GridSize = Tuple[int, int]  # (num_rows_blocks, num_cols_blocks)
 Rect = Tuple[int, int, int, int]  # row0, row1, col0, col1 (half-open)
 
 
@@ -44,7 +44,7 @@ class GridTilingStrategy:
     """Two-round recursive grid mapping with a DSE loop.
 
     Parameters
-    - grid_pool: Optional list of `(tile_h, tile_w)` candidates. If omitted,
+    - grid_pool: Optional list of `(num_rows_blocks, num_cols_blocks)` candidates. If omitted,
       a compact default pool is derived from the matrix shape during DSE.
     - stage2_max_per_rect: Cap on how many exact-fit grid options to try per
       leftover rectangle to control combinatorics.
@@ -88,10 +88,15 @@ class GridTilingStrategy:
         best_mapping: Optional[Mapping] = None
 
         # Enumerate first-round grid choices
-        for tile_h, tile_w in pool:
-            if tile_h <= 0 or tile_w <= 0:
+        for num_rows_blocks, num_cols_blocks in pool:
+            if num_rows_blocks <= 0 or num_cols_blocks <= 0:
                 continue
-            if tile_h > matrix.rows or tile_w > matrix.cols:
+
+            # Calculate actual tile sizes from number of blocks
+            tile_h = matrix.rows // num_rows_blocks
+            tile_w = matrix.cols // num_cols_blocks
+
+            if tile_h <= 0 or tile_w <= 0:
                 continue
 
             mappings = self._enumerate_two_stage_mappings(matrix, chip, (tile_h, tile_w), pool)
@@ -115,7 +120,7 @@ class GridTilingStrategy:
     # --------------------
 
     def _enumerate_two_stage_mappings(
-        self, matrix: MatrixShape, chip: Chip, stage1_tile: GridSize, pool: Sequence[GridSize]
+        self, matrix: MatrixShape, chip: Chip, stage1_tile: Tuple[int, int], pool: Sequence[GridSize]
     ) -> Iterable[Mapping]:
         """Yield all second-stage combinations given a first-stage tile size.
 
@@ -143,7 +148,7 @@ class GridTilingStrategy:
                 row1 = row0 + th1
                 col0 = c * tw1
                 col1 = col0 + tw1
-                stage1_tiles.append(Tile.create(row0, row1, col0, col1, prefix="s1"))
+                stage1_tiles.append(Tile.create(row0, row1, col0, col1, batch0=0, batch1=matrix.batch_size, prefix="s1"))
 
         # Leftover rectangles: right strip, bottom strip, bottom-right corner
         H1 = r_full * th1
@@ -168,8 +173,15 @@ class GridTilingStrategy:
             opts: List[Tuple[str, object]] = []
 
             # Grid options that tile exactly and evenly across dies
-            exacts: List[GridSize] = []
-            for th2, tw2 in pool:
+            exacts: List[Tuple[int, int]] = []
+            for num_rows_blocks, num_cols_blocks in pool:
+                if num_rows_blocks <= 0 or num_cols_blocks <= 0:
+                    continue
+
+                # Calculate tile sizes for this leftover rectangle
+                th2 = h // num_rows_blocks if num_rows_blocks > 0 else h
+                tw2 = w // num_cols_blocks if num_cols_blocks > 0 else w
+
                 if th2 <= 0 or tw2 <= 0:
                     continue
                 if h % th2 != 0 or w % tw2 != 0:
@@ -226,7 +238,7 @@ class GridTilingStrategy:
                             t_c0 = c0 + cc_idx * tw2
                             t_c1 = t_c0 + tw2
                             rect_tiles.append(
-                                Tile.create(t_r0, t_r1, t_c0, t_c1, prefix=f"s2-{rect_label}")
+                                Tile.create(t_r0, t_r1, t_c0, t_c1, batch0=0, batch1=matrix.batch_size, prefix=f"s2-{rect_label}")
                             )
                 elif kind == "vsplit":
                     # Split into die_count vertical strips (full height)
@@ -236,7 +248,7 @@ class GridTilingStrategy:
                         if wsplit <= 0:
                             continue
                         rect_tiles.append(
-                            Tile.create(r0, r1, cstart, cstart + wsplit, prefix=f"s2v-{rect_label}")
+                            Tile.create(r0, r1, cstart, cstart + wsplit, batch0=0, batch1=matrix.batch_size, prefix=f"s2v-{rect_label}")
                         )
                         cstart += wsplit
                 elif kind == "hsplit":
@@ -247,7 +259,7 @@ class GridTilingStrategy:
                         if hsplit <= 0:
                             continue
                         rect_tiles.append(
-                            Tile.create(rstart, rstart + hsplit, c0, c1, prefix=f"s2h-{rect_label}")
+                            Tile.create(rstart, rstart + hsplit, c0, c1, batch0=0, batch1=matrix.batch_size, prefix=f"s2h-{rect_label}")
                         )
                         rstart += hsplit
                 else:
@@ -268,32 +280,32 @@ class GridTilingStrategy:
     # --------------------
 
     def _default_grid_pool(self, matrix: MatrixShape) -> List[GridSize]:
-        """Construct a compact, useful pool of tile sizes.
+        """Construct a compact, useful pool of block counts.
 
-        The pool is based on simple divisors and powers-of-two like sizes. It
+        The pool is based on simple divisors and powers-of-two like block counts. It
         includes pairs up to a moderate limit to avoid explosion.
         """
 
         rows, cols = matrix.rows, matrix.cols
 
-        def divisors(n: int) -> List[int]:
-            ds: List[int] = []
+        def block_counts(n: int) -> List[int]:
+            """Generate reasonable block count candidates for dimension n."""
+            counts: List[int] = []
+            # Add small block counts (1-16)
             for k in range(1, min(n, 16) + 1):
-                # Prefer larger tiles by stepwise division
-                val = max(1, n // k)
-                if val not in ds:
-                    ds.append(val)
-            # Powers of two up to n
+                if n % k == 0 or n // k > 0:  # Ensure we can create meaningful blocks
+                    counts.append(k)
+            # Add powers of two up to reasonable limit
             p = 1
-            while p <= n:
-                if p not in ds:
-                    ds.append(p)
+            while p <= min(n, 64):
+                if p not in counts:
+                    counts.append(p)
                 p *= 2
-            ds.sort()
-            return ds
+            counts.sort()
+            return counts
 
-        r_cands = [x for x in divisors(rows) if 1 <= x <= rows]
-        c_cands = [x for x in divisors(cols) if 1 <= x <= cols]
+        r_cands = [x for x in block_counts(rows) if 1 <= x <= rows]
+        c_cands = [x for x in block_counts(cols) if 1 <= x <= cols]
 
         pool: List[GridSize] = []
         for rh in r_cands:

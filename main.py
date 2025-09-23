@@ -10,10 +10,11 @@ from matrixmachine.sim_engine import simulate
 
 
 def sim_test():
-    # Create a matrix shape (4096x4096)
-    matrix_shape = MatrixShape(rows=4096, cols=4096)
-    print(f"Matrix shape: {matrix_shape.rows}x{matrix_shape.cols}")
+    # Create a matrix shape (4096x4096) with batch_size=1 (default for GEMV)
+    matrix_shape = MatrixShape(rows=4096, cols=4096, batch_size=1)
+    print(f"Matrix shape: {matrix_shape.rows}x{matrix_shape.cols}x{matrix_shape.batch_size}")
     print(f"Matrix area: {matrix_shape.area()}")
+    print(f"Matrix volume: {matrix_shape.volume()}")
 
     # Create compute dies specification
     die_spec = ComputeDieSpec(
