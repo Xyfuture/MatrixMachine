@@ -1,33 +1,35 @@
 from Desim.Core import SimModule,SimCoroutine,SimSession, SimTime
 from Desim.module.FIFO import FIFO
 from perf_tracer import PerfettoTracer
-from typing import Dict
+from typing import Dict, List, Optional
 
-from .description import ComputeDie, Mapping, Chip
+from .description import ComputeDie, Mapping, Chip, Tile
 
 
 
 
 class SimComputeDie(SimModule):
-    def __init__(self, compute_die: ComputeDie, mapping: Mapping, fifo_size: int = 10):
+    def __init__(self, compute_die: ComputeDie, tracer:PerfettoTracer, fifo_size: int = 10):
         super().__init__()
 
-        self.tracer = PerfettoTracer.get_global_tracer()
+        self.tracer = tracer
         self.compute_die: ComputeDie = compute_die
-        self.mapping: Mapping = mapping
+        self.mapping: Optional[Mapping] = None
+        self.task_queue:List[Tile] = []
 
         self.input_fifo: FIFO = FIFO(fifo_size)
         self.output_fifo: FIFO = FIFO(fifo_size)
 
-        self.task_queue = self.mapping.placement[self.compute_die.die_id]
-
         self.tracer_unit_name = f"ComputeDie-{self.compute_die.die_id}"
-
         self.track_info = self.tracer.register_module(self.tracer_unit_name)
 
         self.register_coroutine(self.input_process)
         self.register_coroutine(self.compute_process)
         self.register_coroutine(self.output_process)
+    
+    def set_mapping(self, mapping: Mapping):
+        self.mapping = mapping
+        self.task_queue = self.mapping.placement[self.compute_die.die_id]
 
     def get_sim_time(self):
         return float(SimSession.sim_time.cycle)
@@ -62,26 +64,51 @@ class SimComputeDie(SimModule):
 
 
 class SimChip:
-    def __init__(self, chip: Chip, mapping: Mapping, fifo_size: int = 10):
+    def __init__(self, chip: Chip, fifo_size: int = 10):
         
+        SimSession.reset()
         SimSession.init()
 
-        PerfettoTracer.init_global_tracer()
-        self.tracer = PerfettoTracer.get_global_tracer()
+        self.running_cycles = 0
+
+        self.tracer = PerfettoTracer(100)
         self.chip: Chip = chip
-        self.mapping: Mapping = mapping
+        self.mapping: Optional[Mapping] = None
 
         self.sim_compute_dies: Dict[str, SimComputeDie] = {}
         for die_id, compute_die in self.chip.compute_dies.items():
             self.sim_compute_dies[die_id] = SimComputeDie(
                 compute_die=compute_die,
-                mapping=mapping,
+                tracer=self.tracer,
                 fifo_size=fifo_size
             )
 
+    def set_mapping(self, mapping: Mapping):
+        self.mapping = mapping
+        for die_id, sim_compute_die in self.sim_compute_dies.items():
+            sim_compute_die.set_mapping(mapping)
+
     def run_sim(self):
         SimSession.scheduler.run() 
-        self.tracer.save("trace.json")  
+        # self.tracer.save("trace.json")
+
+        self.running_cycles = int(SimSession.sim_time.cycle)
+        print(f"Total running cycles: {self.running_cycles}")
+        
+    def get_running_cycles(self):
+        return self.running_cycles  
+
+    def save_trace_file(self, filename: str = "trace.json"):
+        self.tracer.save(filename)
 
 
 
+def simulate(chip:Chip, mapping: Mapping,save_trace:bool=False)->int:
+    sim_chip = SimChip(chip)
+    sim_chip.set_mapping(mapping)
+    sim_chip.run_sim()
+    if save_trace:
+        sim_chip.save_trace_file("main_trace.json")
+    return sim_chip.get_running_cycles()
+
+    

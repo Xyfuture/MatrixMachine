@@ -270,23 +270,23 @@ class Mapping:
     """Bidirectional mapping between tiles and compute dies."""
 
     matrix: MatrixShape
-    compute_dies: Dict[str, ComputeDie]
+    chip: Chip
     tiles: Dict[str, Tile] = field(default_factory=dict)
     placement: Dict[str, List[Tile]] = field(default_factory=dict)
     reverse_placement: Dict[str, ComputeDie] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for die_id in self.compute_dies:
+        for die_id in self.chip.compute_dies:
             self.placement.setdefault(die_id, [])
 
     @classmethod
     def from_tile_data(
         cls,
         matrix: MatrixShape,
-        compute_dies: Dict[str, ComputeDie],
+        chip: Chip,
         tile_data: Iterable[TileAssignmentInput],
     ) -> "Mapping":
-        mapping = cls(matrix=matrix, compute_dies=compute_dies)
+        mapping = cls(matrix=matrix, chip=chip)
         mapping.build(tile_data)
         mapping.check_all()
         return mapping
@@ -315,12 +315,12 @@ class Mapping:
             self.add_tile(die_id, row0, row1, col0, col1)
 
     def _register_tile(self, die_id: str, tile: Tile) -> None:
-        if die_id not in self.compute_dies:
+        if die_id not in self.chip.compute_dies:
             raise ValueError(f"Unknown compute die: {die_id}")
 
         self.tiles[tile.tile_id] = tile
         self.placement.setdefault(die_id, []).append(tile)
-        self.reverse_placement[tile.tile_id] = self.compute_dies[die_id]
+        self.reverse_placement[tile.tile_id] = self.chip.compute_dies[die_id]
 
     # ----------
     # Validation helpers

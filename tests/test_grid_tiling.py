@@ -10,7 +10,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from matrixmachine.description import MatrixShape, ComputeDieSpec, ComputeDie, Chip, ChipSpec
-from matrixmachine.strategy.trivial import GridTilingStrategy
+from matrixmachine.strategy.trivial import TrivialTilingStrategy
 
 
 def main():
@@ -49,7 +49,7 @@ def main():
     print()
 
     # Create grid tiling strategy
-    strategy = GridTilingStrategy()
+    strategy = TrivialTilingStrategy()
 
     # Example 1: Fixed grid mapping (3x2 grid)
     print("=== Example 1: Fixed 3x2 Grid ===")

@@ -6,7 +6,7 @@ from ..description import Chip, Mapping, MatrixShape
 
 
 @dataclass
-class GridTilingStrategy:
+class TrivialTilingStrategy:
     """Grid-based tiling that assigns submatrices to dies in round-robin order."""
 
     def create_mapping(
@@ -31,7 +31,7 @@ class GridTilingStrategy:
             raise ValueError("Grid configuration produced no tiles")
 
         die_ids = sorted(chip.compute_dies.keys())
-        mapping = Mapping(matrix=matrix_shape, compute_dies=chip.compute_dies.copy())
+        mapping = Mapping(matrix=matrix_shape, chip=chip)
 
         tile_index = 0
         for row0, row1 in row_bounds:

@@ -1,20 +1,15 @@
-from Desim.Core import SimSession
 from matrixmachine.description import (
     MatrixShape,
-    Tile,
     ComputeDieSpec,
-    ComputeDie,
     ChipSpec,
     Chip,
     Mapping,
 )
-from matrixmachine.strategy.trivial import GridTilingStrategy
-from matrixmachine.sim_engine import SimChip
+from matrixmachine.strategy.trivial import TrivialTilingStrategy
+from matrixmachine.sim_engine import simulate
 
 
 def sim_test():
-    SimSession.reset()
-    SimSession.init()
     # Create a matrix shape (4096x4096)
     matrix_shape = MatrixShape(rows=4096, cols=4096)
     print(f"Matrix shape: {matrix_shape.rows}x{matrix_shape.cols}")
@@ -27,7 +22,7 @@ def sim_test():
         output_bandwidth=128,  # 128 GB/s
     )
 
-    # Create a chip with 3 compute dies
+    # Create a chip with 8 compute dies
     chip_spec = ChipSpec(die_count=8, die_spec=die_spec)
     chip = Chip.create_from_spec(chip_spec)
 
@@ -37,8 +32,8 @@ def sim_test():
     print(f"  Total bandwidth: {chip.total_bandwidth} GB/s")
     print()
 
-    # Create grid tiling strategy
-    strategy = GridTilingStrategy()
+    # Create trivial tiling strategy
+    strategy = TrivialTilingStrategy()
 
     # Create mapping using balanced strategy
     mapping = strategy.create_balanced_mapping(matrix_shape, chip)
@@ -47,8 +42,7 @@ def sim_test():
     for die_id, tiles in mapping.placement.items():
         total_area = sum(tile.area for tile in tiles)
         print(f"  {die_id}: {len(tiles)} tiles, total area: {total_area}")
-        for tile in tiles:
-            print(f"    {tile.tile_id}: [{tile.row0}:{tile.row1}, {tile.col0}:{tile.col1}]")
+
     print()
 
     # Validation
@@ -56,12 +50,11 @@ def sim_test():
     print(f"Number of tiles: {len(mapping.tiles)}")
     print(f"Validation passed: {mapping.check_bidirectional_mapping()}")
 
-    # Create and run simulation
+    # Run simulation using the new simulate function
     print("Starting simulation...")
-    sim_chip = SimChip(chip=chip, mapping=mapping, fifo_size=10)
-    sim_chip.run_sim()
-    print("Simulation completed! Trace file saved as 'trace.json'")
-    print("View the trace at: ui.perfetto.dev")
+    running_cycles = simulate(chip, mapping, save_trace=True)
+    
+    print(f"Simulation completed! Total running cycles: {running_cycles}")
 
 
 if __name__ == "__main__":

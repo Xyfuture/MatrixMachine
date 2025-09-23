@@ -1,5 +1,9 @@
 """Tiling strategies for matrix decomposition."""
 
-from .trivial import *
+from .trivial import TrivialTilingStrategy
+from .grid import GridTilingStrategy
 
-__all__ = []
+__all__ = [
+    "TrivialTilingStrategy",
+    "GridTilingStrategy",
+]
