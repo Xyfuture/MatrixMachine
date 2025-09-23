@@ -27,6 +27,7 @@ def main():
         compute_power=1.0,  # 1 TFLOPS
         input_bandwidth=10.0,  # 10 GB/s
         output_bandwidth=10.0,  # 10 GB/s
+        memory_bandwidth=0.1,  # 0.1 TB/s
     )
 
     # Create a chip with 3 compute dies

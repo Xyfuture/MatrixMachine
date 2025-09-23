@@ -49,7 +49,9 @@ class SimComputeDie(SimModule):
             _ = self.input_fifo.read()
 
             with self.tracer.record_event(compute_track_info, self.get_sim_time, f"Compute-Task-{i}"):
-                latency = int(task.rows * task.cols // (self.compute_die.config.compute_power * 10**3))
+                compute_latency = int(task.rows * task.cols // (self.compute_die.config.compute_power * 10**3))
+                memory_latency = int(task.rows * task.cols // (self.compute_die.config.memory_bandwidth * 10**3))
+                latency = max(compute_latency, memory_latency)
                 SimModule.wait_time(SimTime(latency))
                 self.output_fifo.write(i)
 

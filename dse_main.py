@@ -12,6 +12,7 @@ def main() -> None:
         compute_power=128,  # 128 TFLOPS
         input_bandwidth=128,  # 128 GB/s
         output_bandwidth=128,  # 128 GB/s
+        memory_bandwidth=1.0,  # 1.0 TB/s
     )
 
     chip_spec = ChipSpec(die_count=8, die_spec=die_spec)

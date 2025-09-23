@@ -165,6 +165,7 @@ class ComputeDieSpec:
     compute_power: float  # TFLOPS
     input_bandwidth: float  # GB/s
     output_bandwidth: float  # GB/s
+    memory_bandwidth: float  # TB/s
 
     def __post_init__(self) -> None:
         if self.compute_power <= 0:
@@ -173,6 +174,8 @@ class ComputeDieSpec:
             raise ValueError("input_bandwidth must be positive")
         if self.output_bandwidth <= 0:
             raise ValueError("output_bandwidth must be positive")
+        if self.memory_bandwidth <= 0:
+            raise ValueError("memory_bandwidth must be positive")
 
     def scale(self, factor: float) -> "ComputeDieSpec":
         """Return a scaled copy (useful for quick what-if experiments)."""
@@ -182,6 +185,7 @@ class ComputeDieSpec:
             compute_power=self.compute_power * factor,
             input_bandwidth=self.input_bandwidth * factor,
             output_bandwidth=self.output_bandwidth * factor,
+            memory_bandwidth=self.memory_bandwidth * factor,
         )
 
 
@@ -230,6 +234,10 @@ class ComputeDie:
     @property
     def output_bandwidth(self) -> float:
         return self.spec.output_bandwidth
+
+    @property
+    def memory_bandwidth(self) -> float:
+        return self.spec.memory_bandwidth
 
     def clone(self, *, die_id: Optional[str] = None, meta: Optional[Dict[str, str]] = None) -> "ComputeDie":
         """Create a shallow copy, optionally overriding identifier or metadata."""
@@ -292,6 +300,10 @@ class Chip:
     @property
     def total_bandwidth(self) -> float:
         return self.total_input_bandwidth + self.total_output_bandwidth
+
+    @property
+    def total_memory_bandwidth(self) -> float:
+        return sum(die.memory_bandwidth for die in self.compute_dies.values())
 
 
 # ---------------------------------------------------------------------------
