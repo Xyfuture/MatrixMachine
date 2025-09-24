@@ -15,19 +15,27 @@ class TrivialTilingStrategy:
         chip: Chip,
         grid_rows: int,
         grid_cols: int,
+        batch_splits: int = 1,
     ) -> Mapping:
         if grid_rows <= 0 or grid_cols <= 0:
             raise ValueError("grid_rows and grid_cols must be positive integers")
+        if batch_splits <= 0:
+            raise ValueError("batch_splits must be a positive integer")
         if matrix_shape.rows <= 0 or matrix_shape.cols <= 0:
             raise ValueError("matrix dimensions must be positive")
+        if matrix_shape.batch_size <= 0:
+            raise ValueError("batch_size must be positive")
         if grid_rows > matrix_shape.rows or grid_cols > matrix_shape.cols:
             raise ValueError("grid dimensions cannot exceed matrix dimensions")
+        if batch_splits > matrix_shape.batch_size:
+            raise ValueError("batch_splits cannot exceed matrix batch_size")
         if not chip.compute_dies:
             raise ValueError("Chip must have at least one compute die")
 
         row_bounds = self._split_dimension(matrix_shape.rows, grid_rows)
         col_bounds = self._split_dimension(matrix_shape.cols, grid_cols)
-        if not row_bounds or not col_bounds:
+        batch_bounds = self._split_dimension(matrix_shape.batch_size, batch_splits)
+        if not row_bounds or not col_bounds or not batch_bounds:
             raise ValueError("Grid configuration produced no tiles")
 
         die_ids = sorted(chip.compute_dies.keys())
@@ -36,9 +44,10 @@ class TrivialTilingStrategy:
         tile_index = 0
         for row0, row1 in row_bounds:
             for col0, col1 in col_bounds:
-                die_id = die_ids[tile_index % len(die_ids)]
-                mapping.add_tile(die_id, row0, row1, col0, col1, batch0=0, batch1=matrix_shape.batch_size)
-                tile_index += 1
+                for batch0, batch1 in batch_bounds:
+                    die_id = die_ids[tile_index % len(die_ids)]
+                    mapping.add_tile(die_id, row0, row1, col0, col1, batch0=batch0, batch1=batch1)
+                    tile_index += 1
 
         mapping.check_all()
         return mapping
@@ -48,6 +57,7 @@ class TrivialTilingStrategy:
         matrix_shape: MatrixShape,
         chip: Chip,
         max_tile_area: Optional[int] = None,
+        batch_splits: int = 1,
     ) -> Mapping:
         if not chip.compute_dies:
             raise ValueError("Chip must have at least one compute die")
@@ -56,12 +66,12 @@ class TrivialTilingStrategy:
         matrix_volume = matrix_shape.volume()
 
         if max_tile_area is None:
-            target_tiles = max(1, num_dies)
+            target_tiles = max(1, num_dies * batch_splits)
         else:
-            target_tiles = max(num_dies, ceil(matrix_volume / max_tile_area))
+            target_tiles = max(num_dies * batch_splits, ceil(matrix_volume / max_tile_area))
 
-        grid_rows, grid_cols = self._derive_grid(matrix_shape, target_tiles)
-        return self.create_mapping(matrix_shape, chip, grid_rows, grid_cols)
+        grid_rows, grid_cols = self._derive_grid(matrix_shape, target_tiles // batch_splits)
+        return self.create_mapping(matrix_shape, chip, grid_rows, grid_cols, batch_splits)
 
     def _split_dimension(self, total: int, parts: int) -> List[Tuple[int, int]]:
         if parts > total:
