@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from math import ceil, sqrt
 from typing import List, Optional, Tuple
 
-from ..description import Chip, Mapping, MatrixShape
+from ..core.description import Chip, Mapping, MatrixShape
 
 
 @dataclass

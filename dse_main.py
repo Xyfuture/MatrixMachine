@@ -1,7 +1,7 @@
-from matrixmachine.description import MatrixShape, ComputeDieSpec, ChipSpec, Chip
+from matrixmachine.core.description import MatrixShape, ComputeDieSpec, ChipSpec, Chip
 from matrixmachine.strategy.grid import GridTilingStrategy
-from matrixmachine.sim_engine import SimChip
-from matrixmachine.utils import MappingResult, calculate_compute_utilization
+from matrixmachine.core.sim_engine import SimChip
+from matrixmachine.core.utils import MappingResult, calculate_compute_utilization
 
 
 def main() -> None:

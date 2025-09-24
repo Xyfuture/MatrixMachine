@@ -1,19 +1,34 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-MatrixMachine couples a lightweight core with vendored dependencies. Core data models live in `description.py`, and the discrete-event shim lives in `sim_engine.py`. Tiling strategies such as `GridTilingStrategy` reside in `strategy/`. Example-driven integration tests are in `test_grid_tiling.py`. Third-party engines are vendored under `packages/Desim` and `packages/PerfTracer`; treat them as git submodules and install in editable mode before running simulations.
+- Core models live in `description.py`; the discrete‑event shim is `sim_engine.py`.
+- Tiling strategies (e.g., `GridTilingStrategy`) are in `strategy/`.
+- Example-driven integration tests: `test_grid_tiling.py`. Add new unit tests next to the module they cover or extend this file for end‑to‑end checks.
+- Vendored engines: `packages/Desim`, `packages/PerfTracer`. Treat as submodules; do not modify their internals without review.
 
 ## Build, Test, and Development Commands
-Create an isolated environment (`python -m venv .venv && source .venv/bin/activate`) before installing dependencies. Install the simulation backends via `pip install -e packages/Desim` and `pip install -e packages/PerfTracer`. Run quick smoke tests with `python test_grid_tiling.py`; it prints mapping stats and validates bidirectional consistency. Use `pytest` for the full suite, and `pytest --cov=description.py,strategy` when you need coverage. Format and lint prior to review with `black .`, `isort .`, and `mypy .`.
+- Create venv: `python -m venv .venv && source .venv/bin/activate`.
+- Install backends (editable): `pip install -e packages/Desim -e packages/PerfTracer`.
+- Smoke test: `python test_grid_tiling.py` (prints mapping stats, validates bidirectional consistency).
+- Full tests: `pytest`; coverage: `pytest --cov=description.py,strategy`.
+- Format/lint: `black .` · `isort .` · `mypy .`.
 
 ## Coding Style & Naming Conventions
-Follow PEP 8 with four-space indentation and descriptive snake_case for functions and variables. Classes remain in CapWords (see `MatrixShape`, `GridTilingStrategy`). Keep modules focused and avoid cross-package imports outside the documented boundaries. Prefer type hints and dataclasses for configuration objects. Let `black` and `isort` enforce formatting, and address `mypy` feedback before pushing.
+- Python, PEP 8, 4‑space indent; prefer type hints and dataclasses for configs.
+- Names: functions/vars `snake_case`; classes `CapWords` (e.g., `MatrixShape`).
+- Keep modules focused; avoid cross‑package imports outside documented boundaries.
 
 ## Testing Guidelines
-Unit and integration checks use `pytest`; place new tests alongside implementation modules or extend `test_grid_tiling.py` when validating strategies end-to-end. Name tests `test_<feature>` and keep fixtures minimal. Ensure new tiling logic calls `Mapping.check_all()`; include negative tests when adding validation paths. Aim for coverage above 85% on modified files and document gaps in the pull request if lower.
+- Framework: `pytest`; name tests `test_<feature>`.
+- New tiling logic must call `Mapping.check_all()` in tests; include negative cases for validation paths.
+- Aim for >85% coverage on modified files; document gaps in PR if lower.
+- Keep fixtures minimal; prioritize example‑driven checks mirroring `test_grid_tiling.py`.
 
 ## Commit & Pull Request Guidelines
-Write commits in imperative mood (`Add grid balancer`) and keep subjects under 50 characters; elaborate in the body with wrapped prose when rationale or trade-offs are non-obvious. Reference issues with `Fixes #<id>` when applicable. PRs should summarize behavior changes, list validation commands, and attach Perfetto traces or CLI screenshots when altering simulation timing. Request review early if touching vendored packages so owners can audit divergences.
+- Commits: imperative mood, subject ≤50 chars (e.g., "Add grid balancer"); elaborate in body when trade‑offs exist. Reference issues (e.g., `Fixes #42`).
+- PRs: summarize behavior changes, list validation commands, and attach Perfetto traces or CLI screenshots when timing changes.
+- If touching vendored packages, open PR early for owners to audit divergences.
 
 ## Simulation & Tracing Notes
-When instrumenting new stages, register Perfetto units via `PerfettoTracer.get_global_tracer()` and scope events around `SimModule.wait_time` calls. Generated trace files open cleanly at `ui.perfetto.dev`; include a short walkthrough in review notes when trace interpretation informs acceptance.
+- Instrument via `PerfettoTracer.get_global_tracer()`; scope around `SimModule.wait_time`.
+- Generated traces open at `ui.perfetto.dev`; add a short walkthrough when trace reading informs acceptance.

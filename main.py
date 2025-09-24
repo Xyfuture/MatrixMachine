@@ -1,4 +1,4 @@
-from matrixmachine.description import (
+from matrixmachine.core.description import (
     MatrixShape,
     ComputeDieSpec,
     ChipSpec,
@@ -6,7 +6,7 @@ from matrixmachine.description import (
     Mapping,
 )
 from matrixmachine.strategy.trivial import TrivialTilingStrategy
-from matrixmachine.sim_engine import simulate
+from matrixmachine.core.sim_engine import simulate
 
 
 def sim_test():

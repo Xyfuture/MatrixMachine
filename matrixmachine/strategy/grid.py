@@ -31,8 +31,8 @@ from dataclasses import dataclass
 from itertools import product
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from ..description import Chip, Mapping, MatrixShape, Tile
-from ..sim_engine import simulate
+from ..core.description import Chip, Mapping, MatrixShape, Tile
+from ..core.sim_engine import simulate
 
 
 GridSize = Tuple[int, int]  # (num_rows_blocks, num_cols_blocks)
