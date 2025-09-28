@@ -1,9 +1,17 @@
 """Tiling strategies for matrix decomposition."""
 
 from .trivial import TrivialTilingStrategy
-from .grid import GridTilingStrategy
+from .agent_grid_search import AgentGridSearchStrategy
 
-__all__ = [
-    "TrivialTilingStrategy",
-    "GridTilingStrategy",
-]
+try:
+    from .grid import GridTilingStrategy
+    __all__ = [
+        "TrivialTilingStrategy",
+        "GridTilingStrategy",
+        "AgentGridSearchStrategy",
+    ]
+except ImportError:
+    __all__ = [
+        "TrivialTilingStrategy",
+        "AgentGridSearchStrategy",
+    ]

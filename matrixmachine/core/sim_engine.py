@@ -39,7 +39,8 @@ class SimComputeDie(SimModule):
 
         for i,task in enumerate(self.task_queue):
             with self.tracer.record_event(input_track_info, self.get_sim_time, f"Input-Task-{i}"):
-                latency = int(task.batches * task.rows // self.compute_die.config.input_bandwidth)
+                data_volume = task.batches * task.rows
+                latency = int(data_volume // self.compute_die.config.input_bandwidth)
                 SimModule.wait_time(SimTime(latency))
                 self.input_fifo.write(i)
     def compute_process(self):
@@ -49,9 +50,14 @@ class SimComputeDie(SimModule):
             _ = self.input_fifo.read()
 
             with self.tracer.record_event(compute_track_info, self.get_sim_time, f"Compute-Task-{i}"):
-                compute_latency = int(task.batches * task.rows * task.cols // (self.compute_die.config.compute_power * 10**3))
-                memory_latency = int(task.rows * task.cols // (self.compute_die.config.memory_bandwidth * 10**3))
+                compute_ops = task.batches * task.rows * task.cols
+                compute_latency = int(compute_ops // (self.compute_die.config.compute_power * 10**3))
+
+                memory_ops = task.rows * task.cols
+                memory_latency = int(memory_ops // (self.compute_die.config.memory_bandwidth * 10**3))
+
                 latency = max(compute_latency, memory_latency)
+
                 SimModule.wait_time(SimTime(latency))
                 self.output_fifo.write(i)
 
@@ -61,7 +67,8 @@ class SimComputeDie(SimModule):
         for i,task in enumerate(self.task_queue):
             _ = self.output_fifo.read()
             with self.tracer.record_event(output_track_info, self.get_sim_time, f"Output-Task-{i}"):
-                latency = int(task.batches * task.cols // self.compute_die.config.output_bandwidth)
+                data_volume = task.batches * task.cols
+                latency = int(data_volume // self.compute_die.config.output_bandwidth)
                 SimModule.wait_time(SimTime(latency))
 
 
@@ -91,7 +98,7 @@ class SimChip:
             sim_compute_die.set_mapping(mapping)
 
     def run_sim(self):
-        SimSession.scheduler.run() 
+        SimSession.scheduler.run()
         # self.tracer.save("trace.json")
 
         self.running_cycles = int(SimSession.sim_time.cycle)

@@ -6,6 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MatrixMachine is a discrete event simulation framework for matrix computation on hardware accelerators. The project simulates matrix operations distributed across multiple compute dies with configurable compute power and bandwidth constraints.
 
+这个项目旨在解决一个问题, 找到矩阵在给定硬件上最快的执行方式, 找到一个映射 mapping, 能够将矩阵拆分到有个 ComputeDie 上, 实现最快的执行速度, 达成最高的算力利用率.
+我现在的硬件架构(Chip)是这样的:
+-  整体上看是一个中心化的架构, 有用一个中心的 IO die, 和 c 个 compute die,  每个 compute die 通过独立的链路与 IO die 相连. 这个架构用来做矩阵运算
+-  每个 Compute Die 拥有一个独立的 Memory, 拥有 4 个参数, 分别是 与 IOdie 的输入/输出带宽, 自身 Memory 的带宽, 自身的算力. 
+-  ComputeDie 输入, 运算, 输出是能够流水运算的
+-  IO Die 每次给 Compute Die 发送输入数据, 多个 ComputeDie 并行运算, 最后 IO Die 收集输出结果, IO Die 上拥有 reduce 模块, 可以对 Compute Die 的输出结果按需要进行累加. 
+我现在有一个任务, 我有一个大的矩阵, 矩阵的尺寸是 M x N,  我需要将这个矩阵拆分为多个 tile, 然后将 tile 映射到多个 Compute Die 上, 然后以 执行时间最长的 Compute Die 的执行时间作为最终的延迟. 
+
+在 matrixmachine/core/description.py 中, 定义了矩阵的描述, tile 的描述, 硬件的描述 和 mapping 的描述.
+在 matrixmachine/core/sim_engine.py 中, 定义了模拟引擎, 模拟引擎使用 Desim 框架, 可以在给定硬件和 mapping 的情况下仿真出运行时间.
+在 matrixmachine/core/utils.py 中, 封装了算力利用率计算函数.
+在 strategy/ 目录下放置了各种映射算法, 可以直接给出或者 DSE 的方式给出一种比较好的映射. 
+
 ## Common Commands
 
 ### Development Setup

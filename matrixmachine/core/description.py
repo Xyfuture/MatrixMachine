@@ -60,6 +60,12 @@ class MatrixShape:
             and 0 <= tile.batch0 < tile.batch1 <= self.batch_size
         )
 
+    def __str__(self) -> str:
+        if self.batch_size == 1:
+            return f"MatrixShape({self.rows}×{self.cols})"
+        else:
+            return f"MatrixShape({self.rows}×{self.cols}×{self.batch_size})"
+
 
 @dataclass(frozen=True)
 class Tile:
@@ -152,6 +158,12 @@ class Tile:
     def as_tuple_with_batch(self) -> Tuple[int, int, int, int, int, int]:
         return self.row0, self.row1, self.col0, self.col1, self.batch0, self.batch1
 
+    def __str__(self) -> str:
+        if self.batch0 == 0 and self.batch1 == 1:
+            return f"Tile({self.tile_id}:[{self.row0}:{self.row1},{self.col0}:{self.col1}])"
+        else:
+            return f"Tile({self.tile_id}:[{self.row0}:{self.row1},{self.col0}:{self.col1},{self.batch0}:{self.batch1}])"
+
 
 # ---------------------------------------------------------------------------
 # Hardware specification layer
@@ -188,6 +200,11 @@ class ComputeDieSpec:
             memory_bandwidth=self.memory_bandwidth * factor,
         )
 
+    def __str__(self) -> str:
+        return (f"ComputeDieSpec(compute={self.compute_power}TFLOPS, "
+                f"input={self.input_bandwidth}GB/s, output={self.output_bandwidth}GB/s, "
+                f"memory={self.memory_bandwidth}TB/s)")
+
 
 @dataclass(frozen=True)
 class ChipSpec:
@@ -199,6 +216,9 @@ class ChipSpec:
     def __post_init__(self) -> None:
         if self.die_count <= 0:
             raise ValueError("die_count must be positive")
+
+    def __str__(self) -> str:
+        return f"ChipSpec({self.die_count} dies, {self.die_spec})"
 
 # Backwards compatibility aliases (prefer the *Spec* names going forward).
 ComputeDieConfig = ComputeDieSpec
@@ -246,6 +266,10 @@ class ComputeDie:
             spec=self.spec,
             meta=dict(self.meta if meta is None else meta),
         )
+
+    def __str__(self) -> str:
+        meta_str = f", meta={self.meta}" if self.meta else ""
+        return f"ComputeDie({self.die_id}, {self.spec}{meta_str})"
 
 
 @dataclass
@@ -304,6 +328,11 @@ class Chip:
     @property
     def total_memory_bandwidth(self) -> float:
         return sum(die.memory_bandwidth for die in self.compute_dies.values())
+
+    def __str__(self) -> str:
+        die_count = len(self.compute_dies)
+        total_compute = self.total_compute_power
+        return f"Chip({die_count} dies, {total_compute}TFLOPS total compute)"
 
 
 # ---------------------------------------------------------------------------
@@ -449,6 +478,19 @@ class Mapping:
     def tiles_of_die(self, die_id: str) -> List[Tile]:
         return list(self.placement.get(die_id, []))
 
+    def display(self) -> None:
+        """Display mapping summary with matrix size and tile assignments per die."""
+        print(f"Matrix: {self.matrix.rows}×{self.matrix.cols}×{self.matrix.batch_size}")
+        for die_id in sorted(self.placement.keys()):
+            tiles = self.placement[die_id]
+            if tiles:
+                tile_info = []
+                for tile in tiles:
+                    tile_info.append(f"{tile.rows}×{tile.cols}×{tile.batches}")
+                print(f"  {die_id}: {', '.join(tile_info)}")
+            else:
+                print(f"  {die_id}: (empty)")
+
     # ----------
     # Bidirectional mapping checks
     # ----------
@@ -473,3 +515,8 @@ class Mapping:
                     return False
 
         return True
+
+    def __str__(self) -> str:
+        tile_count = len(self.tiles)
+        die_count = len([die for die, tiles in self.placement.items() if tiles])
+        return f"Mapping({tile_count} tiles on {die_count} active dies, matrix={self.matrix})"
