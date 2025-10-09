@@ -142,3 +142,7 @@ traces/
 # OS
 .DS_Store
 Thumbs.db
+
+# Others
+papers/
+todo/

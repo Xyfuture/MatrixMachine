@@ -102,7 +102,6 @@ class SimChip:
         # self.tracer.save("trace.json")
 
         self.running_cycles = int(SimSession.sim_time.cycle)
-        print(f"Total running cycles: {self.running_cycles}")
         
     def get_running_cycles(self):
         return self.running_cycles  

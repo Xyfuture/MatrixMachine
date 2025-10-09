@@ -82,7 +82,8 @@ class AgentGridSearchStrategy:
             available_dies: Set of die IDs to use (defaults to all dies)
             current_iteration: Current recursion depth (internal parameter)
 
-        Returns:
+        Returns:ai
+        
             MappingResult with optimal mapping and latency, or None if no valid mapping found
         """
         if available_dies is None:
