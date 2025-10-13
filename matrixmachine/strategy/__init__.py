@@ -2,7 +2,7 @@
 
 from .trivial import TrivialTilingStrategy
 from .agent_grid_search import AgentGridSearchStrategy
-from .code_search import CodeSearchStrategy
+from .h2llm_mapping import H2LLMTilingStrategy, H2LLMDataCentricStrategy
 
 try:
     from .grid import GridTilingStrategy
@@ -10,11 +10,13 @@ try:
         "TrivialTilingStrategy",
         "GridTilingStrategy",
         "AgentGridSearchStrategy",
-        "CodeSearchStrategy",
+        "H2LLMTilingStrategy",
+        "H2LLMDataCentricStrategy",
     ]
 except ImportError:
     __all__ = [
         "TrivialTilingStrategy",
         "AgentGridSearchStrategy",
-        "CodeSearchStrategy",
+        "H2LLMTilingStrategy",
+        "H2LLMDataCentricStrategy",
     ]

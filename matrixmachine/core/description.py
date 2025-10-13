@@ -18,11 +18,55 @@ instantiated objects with minimal boilerplate.
 
 from dataclasses import dataclass, field
 from typing import Callable, ClassVar, Dict, Iterable, List, Optional, Tuple
+from enum import Enum
 
 
 # ---------------------------------------------------------------------------
 # Matrix primitives
 # ---------------------------------------------------------------------------
+
+
+class DataType(Enum):
+    """Supported data types for matrix computations."""
+
+    FP16 = "fp16"
+    INT8 = "int8"
+    INT4 = "int4"
+    FP8 = "fp8"
+
+    @property
+    def bytes_per_element(self) -> float:
+        """Return the number of bytes per element for this data type."""
+        return {
+            DataType.FP16: 2.0,
+            DataType.INT8: 1.0,
+            DataType.INT4: 0.5,  # 4 bits = 0.5 bytes
+            DataType.FP8: 1.0,
+        }[self]
+
+
+@dataclass(frozen=True)
+class DataFormat:
+    """Data format configuration for matrix computations."""
+
+    input_dtype: DataType = DataType.FP16
+    output_dtype: DataType = DataType.FP16
+    weight_dtype: DataType = DataType.FP16
+
+    def total_bytes_per_element(self) -> float:
+        """Return the total bytes per element considering all data types.
+
+        For a matrix multiplication, this represents the combined data footprint
+        of input, weight, and output for a single computation.
+        """
+        return (
+            self.input_dtype.bytes_per_element +
+            self.output_dtype.bytes_per_element +
+            self.weight_dtype.bytes_per_element
+        )
+
+    def __str__(self) -> str:
+        return f"DataFormat(input={self.input_dtype.value}, output={self.output_dtype.value}, weight={self.weight_dtype.value})"
 
 
 @dataclass(frozen=True)
@@ -32,11 +76,14 @@ class MatrixShape:
     rows: int
     cols: int
     batch_size: int = 1
+    data_format: DataFormat = DataFormat()
 
+    @property
     def area(self) -> int:
         """Total number of elements in the matrix."""
         return self.rows * self.cols
 
+    @property
     def volume(self) -> int:
         """Total number of elements including batch dimension."""
         return self.rows * self.cols * self.batch_size
@@ -60,11 +107,15 @@ class MatrixShape:
             and 0 <= tile.batch0 < tile.batch1 <= self.batch_size
         )
 
+    def to_bytes(self) -> float:
+        """Calculate total bytes required for the matrix including all data types."""
+        return self.volume * self.data_format.total_bytes_per_element()
+
     def __str__(self) -> str:
         if self.batch_size == 1:
-            return f"MatrixShape({self.rows}×{self.cols})"
+            return f"MatrixShape({self.rows}×{self.cols}, {self.data_format})"
         else:
-            return f"MatrixShape({self.rows}×{self.cols}×{self.batch_size})"
+            return f"MatrixShape({self.rows}×{self.cols}×{self.batch_size}, {self.data_format})"
 
 
 @dataclass(frozen=True)
@@ -78,6 +129,7 @@ class Tile:
     col1: int
     batch0: int = 0
     batch1: int = 1
+    data_format: DataFormat = DataFormat()
 
     _id_counter: ClassVar[int] = 1
 
@@ -92,13 +144,23 @@ class Tile:
         batch1: int = 1,
         *,
         prefix: str = "tile",
+        data_format: Optional["DataFormat"] = None,
     ) -> "Tile":
         """Create a new tile with an auto-generated identifier."""
 
         cls._validate_bounds(row0, row1, col0, col1, batch0, batch1)
         tile_id = f"{prefix}_{cls._id_counter}"
         cls._id_counter += 1
-        return cls(tile_id=tile_id, row0=row0, row1=row1, col0=col0, col1=col1, batch0=batch0, batch1=batch1)
+        return cls(
+            tile_id=tile_id,
+            row0=row0,
+            row1=row1,
+            col0=col0,
+            col1=col1,
+            batch0=batch0,
+            batch1=batch1,
+            data_format=data_format or DataFormat()
+        )
 
     @staticmethod
     def _validate_bounds(row0: int, row1: int, col0: int, col1: int, batch0: int = 0, batch1: int = 1) -> None:
@@ -150,13 +212,26 @@ class Tile:
         r0, r1 = max(self.row0, other.row0), min(self.row1, other.row1)
         c0, c1 = max(self.col0, other.col0), min(self.col1, other.col1)
         b0, b1 = max(self.batch0, other.batch0), min(self.batch1, other.batch1)
-        return Tile(tile_id=f"({self.tile_id})&({other.tile_id})", row0=r0, row1=r1, col0=c0, col1=c1, batch0=b0, batch1=b1)
+        return Tile(
+            tile_id=f"({self.tile_id})&({other.tile_id})",
+            row0=r0,
+            row1=r1,
+            col0=c0,
+            col1=c1,
+            batch0=b0,
+            batch1=b1,
+            data_format=self.data_format
+        )
 
     def as_tuple(self) -> Tuple[int, int, int, int]:
         return self.row0, self.row1, self.col0, self.col1
 
     def as_tuple_with_batch(self) -> Tuple[int, int, int, int, int, int]:
         return self.row0, self.row1, self.col0, self.col1, self.batch0, self.batch1
+
+    def to_bytes(self) -> float:
+        """Calculate total bytes required for the tile including all data types."""
+        return self.volume * self.data_format.total_bytes_per_element()
 
     def __str__(self) -> str:
         if self.batch0 == 0 and self.batch1 == 1:
@@ -172,38 +247,102 @@ class Tile:
 
 @dataclass(frozen=True)
 class ComputeDieSpec:
-    """Immutable specification for a compute die."""
+    """Immutable specification for a compute die.
+
+    Args:
+        compute_power: Compute power in TFLOPS
+        input_bandwidth: Input bandwidth in GB/s (optional if shared_bandwidth is set)
+        output_bandwidth: Output bandwidth in GB/s (optional if shared_bandwidth is set)
+        memory_bandwidth: Memory bandwidth in TB/s
+        shared_bandwidth: Shared I/O bandwidth in GB/s (mutually exclusive with input/output bandwidth)
+    """
 
     compute_power: float  # TFLOPS
-    input_bandwidth: float  # GB/s
-    output_bandwidth: float  # GB/s
-    memory_bandwidth: float  # TB/s
+    input_bandwidth: Optional[float] = None  # GB/s
+    output_bandwidth: Optional[float] = None  # GB/s
+    memory_bandwidth: float = 0.0  # TB/s
+    shared_bandwidth: Optional[float] = None  # GB/s
 
     def __post_init__(self) -> None:
         if self.compute_power <= 0:
             raise ValueError("compute_power must be positive")
-        if self.input_bandwidth <= 0:
-            raise ValueError("input_bandwidth must be positive")
-        if self.output_bandwidth <= 0:
-            raise ValueError("output_bandwidth must be positive")
         if self.memory_bandwidth <= 0:
             raise ValueError("memory_bandwidth must be positive")
+
+        # Validate bandwidth configuration
+        has_separate = self.input_bandwidth is not None or self.output_bandwidth is not None
+        has_shared = self.shared_bandwidth is not None
+
+        if has_separate and has_shared:
+            raise ValueError(
+                "Cannot specify both separate bandwidths (input_bandwidth/output_bandwidth) "
+                "and shared_bandwidth at the same time"
+            )
+
+        if not has_separate and not has_shared:
+            raise ValueError(
+                "Must specify either separate bandwidths (input_bandwidth and output_bandwidth) "
+                "or shared_bandwidth"
+            )
+
+        if has_separate:
+            if self.input_bandwidth is None or self.input_bandwidth <= 0:
+                raise ValueError("input_bandwidth must be positive when using separate bandwidths")
+            if self.output_bandwidth is None or self.output_bandwidth <= 0:
+                raise ValueError("output_bandwidth must be positive when using separate bandwidths")
+
+        if has_shared:
+            if self.shared_bandwidth is None or self.shared_bandwidth <= 0:
+                raise ValueError("shared_bandwidth must be positive when using shared bandwidth mode")
+
+    def get_input_bandwidth(self) -> float:
+        """Get the effective input bandwidth.
+
+        Returns shared_bandwidth if in shared mode, otherwise returns input_bandwidth.
+        """
+        if self.shared_bandwidth is not None:
+            return self.shared_bandwidth
+        assert self.input_bandwidth is not None
+        return self.input_bandwidth
+
+    def get_output_bandwidth(self) -> float:
+        """Get the effective output bandwidth.
+
+        Returns shared_bandwidth if in shared mode, otherwise returns output_bandwidth.
+        """
+        if self.shared_bandwidth is not None:
+            return self.shared_bandwidth
+        assert self.output_bandwidth is not None
+        return self.output_bandwidth
 
     def scale(self, factor: float) -> "ComputeDieSpec":
         """Return a scaled copy (useful for quick what-if experiments)."""
         if factor <= 0:
             raise ValueError("scale factor must be positive")
-        return ComputeDieSpec(
-            compute_power=self.compute_power * factor,
-            input_bandwidth=self.input_bandwidth * factor,
-            output_bandwidth=self.output_bandwidth * factor,
-            memory_bandwidth=self.memory_bandwidth * factor,
-        )
+
+        if self.shared_bandwidth is not None:
+            return ComputeDieSpec(
+                compute_power=self.compute_power * factor,
+                memory_bandwidth=self.memory_bandwidth * factor,
+                shared_bandwidth=self.shared_bandwidth * factor,
+            )
+        else:
+            return ComputeDieSpec(
+                compute_power=self.compute_power * factor,
+                input_bandwidth=self.input_bandwidth * factor if self.input_bandwidth else None,
+                output_bandwidth=self.output_bandwidth * factor if self.output_bandwidth else None,
+                memory_bandwidth=self.memory_bandwidth * factor,
+            )
 
     def __str__(self) -> str:
-        return (f"ComputeDieSpec(compute={self.compute_power}TFLOPS, "
-                f"input={self.input_bandwidth}GB/s, output={self.output_bandwidth}GB/s, "
-                f"memory={self.memory_bandwidth}TB/s)")
+        if self.shared_bandwidth is not None:
+            return (f"ComputeDieSpec(compute={self.compute_power}TFLOPS, "
+                    f"shared_bandwidth={self.shared_bandwidth}GB/s, "
+                    f"memory={self.memory_bandwidth}TB/s)")
+        else:
+            return (f"ComputeDieSpec(compute={self.compute_power}TFLOPS, "
+                    f"input={self.input_bandwidth}GB/s, output={self.output_bandwidth}GB/s, "
+                    f"memory={self.memory_bandwidth}TB/s)")
 
 
 @dataclass(frozen=True)
@@ -238,22 +377,18 @@ class ComputeDie:
     spec: ComputeDieSpec
     meta: Dict[str, str] = field(default_factory=dict)
 
-    @property
-    def config(self) -> ComputeDieSpec:
-        """Alias to maintain compatibility with legacy code."""
-        return self.spec
-
+  
     @property
     def compute_power(self) -> float:
         return self.spec.compute_power
 
     @property
     def input_bandwidth(self) -> float:
-        return self.spec.input_bandwidth
+        return self.spec.get_input_bandwidth()
 
     @property
     def output_bandwidth(self) -> float:
-        return self.spec.output_bandwidth
+        return self.spec.get_output_bandwidth()
 
     @property
     def memory_bandwidth(self) -> float:
@@ -382,9 +517,26 @@ class Mapping:
     ) -> Tile:
         Tile._validate_bounds(row0, row1, col0, col1, batch0, batch1)
         tile = (
-            Tile(tile_id=tile_id, row0=row0, row1=row1, col0=col0, col1=col1, batch0=batch0, batch1=batch1)
+            Tile(
+                tile_id=tile_id,
+                row0=row0,
+                row1=row1,
+                col0=col0,
+                col1=col1,
+                batch0=batch0,
+                batch1=batch1,
+                data_format=self.matrix.data_format
+            )
             if tile_id is not None
-            else Tile.create(row0=row0, row1=row1, col0=col0, col1=col1, batch0=batch0, batch1=batch1)
+            else Tile.create(
+                row0=row0,
+                row1=row1,
+                col0=col0,
+                col1=col1,
+                batch0=batch0,
+                batch1=batch1,
+                data_format=self.matrix.data_format
+            )
         )
         self._register_tile(die_id, tile)
         return tile
@@ -450,10 +602,10 @@ class Mapping:
 
     def _check_full_coverage(self) -> None:
         total = sum(t.volume for t in self.tiles.values())
-        if total != self.matrix.volume():
+        if total != self.matrix.volume:
             raise ValueError(
                 "Coverage volume not equal to matrix volume: "
-                f"tiles={total}, matrix={self.matrix.volume()}, may have holes or out of bounds"
+                f"tiles={total}, matrix={self.matrix.volume}, may have holes or out of bounds"
             )
 
     # ----------

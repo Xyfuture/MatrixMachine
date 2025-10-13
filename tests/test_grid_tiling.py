@@ -19,7 +19,7 @@ def main():
     # Create a test matrix (10x8)
     matrix_shape = MatrixShape(rows=10, cols=8)
     print(f"Matrix shape: {matrix_shape.rows}x{matrix_shape.cols}")
-    print(f"Matrix area: {matrix_shape.area()}")
+    print(f"Matrix area: {matrix_shape.area}")
     print()
 
     # Create compute dies specification

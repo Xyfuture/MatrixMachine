@@ -63,7 +63,7 @@ class TrivialTilingStrategy:
             raise ValueError("Chip must have at least one compute die")
 
         num_dies = len(chip.compute_dies)
-        matrix_volume = matrix_shape.volume()
+        matrix_volume = matrix_shape.volume
 
         if max_tile_area is None:
             target_tiles = max(1, num_dies * batch_splits)

@@ -17,7 +17,8 @@ MatrixMachine is a discrete event simulation framework for matrix computation on
 在 matrixmachine/core/description.py 中, 定义了矩阵的描述, tile 的描述, 硬件的描述 和 mapping 的描述.
 在 matrixmachine/core/sim_engine.py 中, 定义了模拟引擎, 模拟引擎使用 Desim 框架, 可以在给定硬件和 mapping 的情况下仿真出运行时间.
 在 matrixmachine/core/utils.py 中, 封装了算力利用率计算函数.
-在 strategy/ 目录下放置了各种映射算法, 可以直接给出或者 DSE 的方式给出一种比较好的映射. 
+在 matrixmachine/strategy/ 目录下放置了各种映射算法. 
+在 matrixmachine/workload/ 目录下存放了一些硬件配置参数和一些用于测试的矩阵.
 
 ## Common Commands
 
@@ -29,18 +30,6 @@ cd packages/Desim && pip install -e .
 # Install PerfTracer dependency
 cd packages/PerfTracer && pip install -e .
 
-# Run the main simulation
-python main.py
-
-# Run design space exploration (DSE) example
-python dse_main.py
-
-# Run manual mapping example
-python manual_mapping_example.py
-
-# Run example tests
-python tests/test_grid_tiling.py
-```
 
 ### Code Quality
 ```bash

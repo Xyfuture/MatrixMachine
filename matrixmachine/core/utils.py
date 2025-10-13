@@ -11,7 +11,7 @@ class MappingResult:
         return self.mapping.chip.total_compute_power_gops
 
     def get_matrix_operation_count(self) -> int:
-        return self.mapping.matrix.area() * self.mapping.matrix.batch_size
+        return self.mapping.matrix.area * self.mapping.matrix.batch_size
 
     def get_compute_utilization(self) -> float:
         matrix_operation_count = self.get_matrix_operation_count()

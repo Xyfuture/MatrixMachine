@@ -13,8 +13,8 @@ def sim_test():
     # Create a matrix shape (4096x4096) with batch_size=1 (default for GEMV)
     matrix_shape = MatrixShape(rows=4096, cols=4096, batch_size=1)
     print(f"Matrix shape: {matrix_shape.rows}x{matrix_shape.cols}x{matrix_shape.batch_size}")
-    print(f"Matrix area: {matrix_shape.area()}")
-    print(f"Matrix volume: {matrix_shape.volume()}")
+    print(f"Matrix area: {matrix_shape.area}")
+    print(f"Matrix volume: {matrix_shape.volume}")
 
     # Create compute dies specification
     die_spec = ComputeDieSpec(
@@ -54,7 +54,7 @@ def sim_test():
 
     # Run simulation using the new simulate function
     print("Starting simulation...")
-    running_cycles = simulate(chip, mapping, save_trace=True)
+    running_cycles = simulate(chip, mapping, save_trace=True, trace_filename="main_simulation_trace.json")
     
     print(f"Simulation completed! Total running cycles: {running_cycles}")
 

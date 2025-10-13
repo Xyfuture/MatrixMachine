@@ -82,6 +82,7 @@ class AgentGridSearchStrategy:
     num_split_col_candidates: List[int] = field(default_factory=lambda: list(range(1, 9)))
     memo: Dict[Tuple, MappingResult] = field(default_factory=dict)
     max_iterations: int = field(default=2)
+    enable_fallback_splits: bool = field(default=True)
 
     # ---------------
     # Helper methods
@@ -95,9 +96,11 @@ class AgentGridSearchStrategy:
         """Validate mapping and run simulation, return None on failure."""
         try:
             mapping.check_all()
-            latency = simulate(chip, mapping, save_trace=False)
+            latency = simulate(chip, mapping)
             return MappingResult(mapping=mapping, latency=latency)
-        except Exception:
+        except Exception as e:
+            logger.error(f"Validation/simulation failed: {type(e).__name__}: {e}")
+            logger.debug(f"Failed mapping details: {mapping}")
             return None
 
     def _is_valid_split(self, num_r: int, num_c: int, matrix: MatrixShape) -> bool:
@@ -145,33 +148,51 @@ class AgentGridSearchStrategy:
         best: Optional[MappingResult] = None
         best_latency = float("inf")
 
-        # Try all split configurations
-        split_count = 0
+        # Generate split candidates with fallback options
+        split_candidates = []
         for num_r in self.num_split_row_candidates:
             for num_c in self.num_split_col_candidates:
-                # Skip invalid configurations
-                if not self._is_valid_split(num_r, num_c, matrix_shape):
-                    continue
+                if self._is_valid_split(num_r, num_c, matrix_shape):
+                    split_candidates.append((num_r, num_c))
 
-                split_count += 1
-                self._log(current_iteration, f"  Trying split config {split_count}: {num_r}x{num_c} (rows x cols)")
+        # Add fallback splits: 1×n_dies and n_dies×1 for perfect die matching
+        if self.enable_fallback_splits:
+            n_dies = len(available_dies)
+            # 1×n_dies: one row, n_dies columns
+            if n_dies <= matrix_shape.cols and (1, n_dies) not in split_candidates:
+                self._log(current_iteration, f"  Adding fallback split: 1×{n_dies} (matches die count)")
+                split_candidates.append((1, n_dies))
+            # n_dies×1: n_dies rows, one column
+            if n_dies <= matrix_shape.rows and (n_dies, 1) not in split_candidates:
+                self._log(current_iteration, f"  Adding fallback split: {n_dies}×1 (matches die count)")
+                split_candidates.append((n_dies, 1))
 
-                try:
-                    candidate = self._evaluate_split_configuration(
-                        matrix_shape, chip, available_dies, num_r, num_c, current_iteration
-                    )
-                except Exception:
-                    self._log(current_iteration, "    Configuration failed")
-                    candidate = None
+        # Try all split configurations
+        split_count = 0
+        for num_r, num_c in split_candidates:
+            # Skip invalid configurations
+            if not self._is_valid_split(num_r, num_c, matrix_shape):
+                continue
 
-                if candidate and candidate.latency < best_latency:
-                    self._log(current_iteration, f"    Found better config, latency: {candidate.latency}")
-                    best = candidate
-                    best_latency = candidate.latency
-                elif candidate:
-                    self._log(current_iteration, f"    Valid config, latency: {candidate.latency}")
-                else:
-                    logger.debug(f"{'  ' * current_iteration}    Invalid config")
+            split_count += 1
+            self._log(current_iteration, f"  Trying split config {split_count}: {num_r}x{num_c} (rows x cols)")
+
+            try:
+                candidate = self._evaluate_split_configuration(
+                    matrix_shape, chip, available_dies, num_r, num_c, current_iteration
+                )
+            except Exception:
+                self._log(current_iteration, "    Configuration failed")
+                candidate = None
+
+            if candidate and candidate.latency < best_latency:
+                self._log(current_iteration, f"    Found better config, latency: {candidate.latency}")
+                best = candidate
+                best_latency = candidate.latency
+            elif candidate:
+                self._log(current_iteration, f"    Valid config, latency: {candidate.latency}")
+            else:
+                logger.debug(f"{'  ' * current_iteration}    Invalid config")
 
         # Cache the best result
         if best:
