@@ -90,7 +90,7 @@ class AgentGridSearchStrategy:
     def _log(self, iteration: int, message: str) -> None:
         """Log a message with proper indentation for recursion depth."""
         indent = "  " * iteration
-        logger.info(f"{indent}{message}")
+        logger.debug(f"{indent}{message}")
 
     def _validate_and_simulate(self, chip: Chip, mapping: Mapping) -> Optional[MappingResult]:
         """Validate mapping and run simulation, return None on failure."""
@@ -329,7 +329,10 @@ class AgentGridSearchStrategy:
         mapping = Mapping(matrix=matrix, chip=chip)
         for die_id, tile_list in assignments.items():
             for r0, r1, c0, c1, b0, b1 in tile_list:
-                mapping.add_tile(die_id, r0, r1, c0, c1, b0, b1)
+                num_rows = r1 - r0
+                num_cols = c1 - c0
+                num_batches = b1 - b0
+                mapping.add_tile(die_id, num_rows, num_cols, num_batches)
         return mapping
 
     def _create_mapping_from_specs(
@@ -342,7 +345,10 @@ class AgentGridSearchStrategy:
         mapping = Mapping(matrix=matrix, chip=chip)
         for die_id, spec_list in assignments.items():
             for spec in spec_list:
-                mapping.add_tile(die_id, spec.row0, spec.row1, spec.col0, spec.col1, spec.batch0, spec.batch1)
+                num_rows = spec.row1 - spec.row0
+                num_cols = spec.col1 - spec.col0
+                num_batches = spec.batch1 - spec.batch0
+                mapping.add_tile(die_id, num_rows, num_cols, num_batches)
         return mapping
 
     def _construct_tail_subregions(
@@ -361,6 +367,10 @@ class AgentGridSearchStrategy:
         """
         if not remaining_tiles:
             return []
+
+        # Extract batch bounds from remaining tiles (all should have same batch bounds)
+        batch0 = remaining_tiles[0].batch0
+        batch1 = remaining_tiles[0].batch1
 
         # Grid dimensions
         g_rows = len(row_bounds)
@@ -393,7 +403,7 @@ class AgentGridSearchStrategy:
             if condition:
                 specs = []
                 for r in regions:
-                    spec = self._grid_rect_to_spec(row_bounds, col_bounds, *r)
+                    spec = self._grid_rect_to_spec(row_bounds, col_bounds, *r, batch0, batch1)
                     if spec is not None:
                         specs.append(spec)
                 return specs
@@ -407,7 +417,9 @@ class AgentGridSearchStrategy:
         r0_idx: int,
         r1_idx_excl: int,
         c0_idx: int,
-        c1_idx_excl: int
+        c1_idx_excl: int,
+        batch0: int = 0,
+        batch1: int = 1
     ) -> Optional[SubMatrixSpec]:
         """Convert grid indices to matrix coordinates."""
         if r0_idx >= r1_idx_excl or c0_idx >= c1_idx_excl:
@@ -416,21 +428,23 @@ class AgentGridSearchStrategy:
         row1 = row_bounds[r1_idx_excl - 1][1]
         col0 = col_bounds[c0_idx][0]
         col1 = col_bounds[c1_idx_excl - 1][1]
-        return SubMatrixSpec(row0=row0, row1=row1, col0=col0, col1=col1)
+        return SubMatrixSpec(row0=row0, row1=row1, col0=col0, col1=col1, batch0=batch0, batch1=batch1)
 
     def _apply_coordinate_offset(self, mapping: Mapping, spec: SubMatrixSpec) -> Mapping:
-        """Apply coordinate offset to map sub-region tiles to original matrix space."""
+        """Copy sub-region mapping to original matrix space.
+
+        Note: Since Tile no longer stores position information, we just copy the tiles
+        with their dimensions. The spec parameter is kept for API compatibility but
+        position offset is no longer needed.
+        """
         offset_mapping = Mapping(matrix=mapping.matrix, chip=mapping.chip)
         for die_id, tiles in mapping.placement.items():
             for tile in tiles:
                 offset_mapping.add_tile(
                     die_id,
-                    spec.row0 + tile.row0,
-                    spec.row0 + tile.row1,
-                    spec.col0 + tile.col0,
-                    spec.col0 + tile.col1,
-                    spec.batch0 + tile.batch0,
-                    spec.batch0 + tile.batch1,
+                    tile.num_rows,
+                    tile.num_cols,
+                    tile.num_batches,
                 )
         return offset_mapping
 
@@ -442,8 +456,7 @@ class AgentGridSearchStrategy:
         for die_id, tiles in main_mapping.placement.items():
             for tile in tiles:
                 combined.add_tile(
-                    die_id, tile.row0, tile.row1, tile.col0, tile.col1,
-                    tile.batch0, tile.batch1
+                    die_id, tile.num_rows, tile.num_cols, tile.num_batches
                 )
 
         # Add tiles from sub-mappings
@@ -451,8 +464,7 @@ class AgentGridSearchStrategy:
             for die_id, tiles in sub_mapping.placement.items():
                 for tile in tiles:
                     combined.add_tile(
-                        die_id, tile.row0, tile.row1, tile.col0, tile.col1,
-                        tile.batch0, tile.batch1
+                        die_id, tile.num_rows, tile.num_cols, tile.num_batches
                     )
 
         return combined

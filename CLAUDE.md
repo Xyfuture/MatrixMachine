@@ -30,8 +30,32 @@ cd packages/Desim && pip install -e .
 # Install PerfTracer dependency
 cd packages/PerfTracer && pip install -e .
 
+# Activate virtual environment (if present)
+source .venv/bin/activate  # On macOS/Linux
+```
 
-### Code Quality
+### Running Simulations
+```bash
+# Basic simulation example
+python main.py
+
+# Agent Grid Search test (configurable)
+python agent_test.py --die-count 8 --batch-size 16
+
+# H2-LLM strategy utilization test
+python test_h2llm_utilization.py
+
+# Agent strategy utilization test
+python test_agent_utilization.py
+
+# Simulation engine tests
+python sim_engine_test.py
+
+# H2-LLM demonstration
+python h2.py
+```
+
+### Testing and Code Quality
 ```bash
 # Format code with black
 black .
@@ -50,6 +74,13 @@ pytest --cov=.
 
 # Run single test file
 pytest tests/test_grid_tiling.py
+```
+
+### Performance Analysis
+```bash
+# Generate and view traces (requires Chrome/Chromium)
+# Open trace files at: https://ui.perfetto.dev
+# Trace files are saved in ./trace/ directory
 ```
 
 ## Architecture
@@ -77,8 +108,9 @@ pytest tests/test_grid_tiling.py
    - Various helper functions for performance analysis
 
 4. **matrixmachine/strategy/**: Tiling strategy implementations
-   - `grid.py`: Grid-based tiling strategy with configurable tile sizes
    - `trivial.py`: Basic tiling implementation for simple use cases
+   - `agent_grid_search.py`: Advanced recursive DSE strategy using grid splits and round-robin assignment
+   - `h2llm_mapping.py`: H2-LLM analytical tiling strategy based on ISCA 2025 paper
 
 5. **packages/Desim/**: Discrete event simulation library (SystemC-like)
    - Core simulation engine with coroutines and time management
@@ -90,6 +122,10 @@ pytest tests/test_grid_tiling.py
    - Supports scoped events and complete events
    - Chrome Trace Event JSON format
 
+7. **matrixmachine/workload/**: Hardware configurations and test matrices
+   - `hardware/h2llm.py`: H2-LLM hardware configuration with configurable compute dies
+   - `matrix/models.py`: Real-world matrix models (Llama variants, transformer layers)
+
 ### Key Design Patterns
 
 - **Tile-based decomposition**: Large matrices are divided into rectangular tiles with 3D batch support
@@ -99,6 +135,9 @@ pytest tests/test_grid_tiling.py
 - **Performance tracing**: All simulation events are traced for performance analysis
 - **Modular strategies**: Tiling strategies are pluggable and configurable
 - **Compute utilization analysis**: Built-in metrics for hardware efficiency evaluation
+- **Recursive DSE**: Agent Grid Search uses recursive design space exploration with memoization
+- **Analytical optimization**: H2-LLM strategy uses closed-form solutions for optimal tiling factors
+- **Round-robin assignment**: Load balancing through intelligent tile distribution strategies
 
 ### Simulation Flow
 
@@ -111,8 +150,11 @@ pytest tests/test_grid_tiling.py
 ## Entry Points
 
 - **main.py**: Basic simulation example with default configurations
-- **dse_main.py**: Design space exploration script for testing different configurations
-- **manual_mapping_example.py**: Example showing manual tile mapping for batch processing
+- **agent_test.py**: Configurable Agent Grid Search utilization testing with command-line arguments
+- **test_h2llm_utilization.py**: H2-LLM strategy performance testing
+- **test_agent_utilization.py**: Agent strategy utilization testing
+- **sim_engine_test.py**: Simulation engine testing and validation
+- **h2.py**: H2-LLM demonstration and hardware showcase
 
 ## Development Notes
 
@@ -120,26 +162,64 @@ pytest tests/test_grid_tiling.py
 - Uses type hints extensively
 - Dataclasses for immutable configuration objects
 - Simulation time is measured in cycles
-- Performance traces can be viewed at ui.perfetto.dev
+- Performance traces can be viewed at https://ui.perfetto.dev
+- Virtual environment recommended (`.venv/` directory present)
+- Logging configured for detailed algorithm execution analysis
+
+## Advanced Features
+
+### Agent Grid Search Strategy
+- **Recursive Design Space Exploration**: Explores multiple tiling configurations recursively
+- **Round-Robin Assignment**: Distributes tiles evenly across compute dies
+- **Memoization**: Caches results to avoid redundant computation
+- **Tail Region Handling**: Geometrically precise handling of remaining tiles
+- **Configurable Parameters**: Split candidates, iteration limits, fallback options
+
+### H2-LLM Strategy
+- **Analytical Optimization**: Uses closed-form solutions from ISCA 2025 paper
+- **Bandwidth-Aware Tiling**: Considers input/output bandwidth constraints
+- **Automatic Parameter Extraction**: Derives bandwidth from hardware specifications
+- **Multi-Dimension Splitting**: Optimizes across K and N dimensions
+- **Batch Processing**: Supports 3D matrix shapes with batch dimensions
+
+### Hardware Configurations
+- **H2-LLM Chip**: Configurable number of compute dies with realistic specifications
+- **Shared vs Separate Bandwidth**: Support for both shared I/O and separate input/output bandwidth
+- **Memory Hierarchy**: Internal memory bandwidth vs external I/O bandwidth modeling
+- **Real-World Models**: Llama transformer layer dimensions for testing
 
 ## File Structure
 
 ```
 MatrixMachine/
 ├── main.py                     # Basic simulation entry point
-├── dse_main.py                 # Design space exploration example
-├── manual_mapping_example.py   # Manual tile mapping example
+├── agent_test.py               # Configurable Agent Grid Search testing
+├── test_h2llm_utilization.py   # H2-LLM strategy performance testing
+├── test_agent_utilization.py   # Agent strategy utilization testing
+├── sim_engine_test.py          # Simulation engine testing
+├── h2.py                       # H2-LLM demonstration
 ├── matrixmachine/              # Core project package
 │   ├── __init__.py            # Package exports
 │   ├── core/                  # Core simulation components
 │   │   ├── description.py     # Data model and hardware specs
 │   │   ├── sim_engine.py      # Simulation engine
 │   │   └── utils.py           # Analysis utilities
-│   └── strategy/              # Tiling strategies
-│       ├── grid.py            # Grid-based tiling strategy
-│       └── trivial.py         # Basic tiling implementation
+│   ├── strategy/              # Tiling strategies
+│   │   ├── trivial.py         # Basic tiling implementation
+│   │   ├── agent_grid_search.py # Advanced recursive DSE strategy
+│   │   └── h2llm_mapping.py   # H2-LLM analytical strategy
+│   └── workload/              # Hardware configurations and test matrices
+│       ├── hardware/          # Hardware specifications
+│       │   └── h2llm.py       # H2-LLM chip configuration
+│       └── matrix/            # Test matrix models
+│           └── models.py      # Real-world matrix dimensions
 ├── tests/                      # Test files
 │   └── test_grid_tiling.py    # Grid tiling examples and tests
+├── trace/                      # Performance trace files output
+├── docs/                       # Documentation
+│   ├── H2LLM_README.md        # H2-LLM implementation details
+│   ├── matrix_shape.md         # Matrix shape specifications
+│   └── log_usage.md           # Logging configuration
 └── packages/                   # Third-party dependencies
     ├── Desim/                 # Discrete event simulation library
     └── PerfTracer/            # Performance tracing library

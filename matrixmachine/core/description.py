@@ -91,25 +91,11 @@ class MatrixShape:
     def to_tuple(self) -> Tuple[int, int]:
         return self.rows, self.cols
 
-    def to_tuple_with_batch(self) -> Tuple[int, int, int]:
-        return self.rows, self.cols, self.batch_size
-
     def contains(self, row: int, col: int, batch: int = 0) -> bool:
         return (0 <= row < self.rows and
                 0 <= col < self.cols and
                 0 <= batch < self.batch_size)
 
-    def fits(self, tile: "Tile") -> bool:
-        """Check whether the tile lies entirely within the matrix."""
-        return (
-            0 <= tile.row0 < tile.row1 <= self.rows
-            and 0 <= tile.col0 < tile.col1 <= self.cols
-            and 0 <= tile.batch0 < tile.batch1 <= self.batch_size
-        )
-
-    def to_bytes(self) -> float:
-        """Calculate total bytes required for the matrix including all data types."""
-        return self.volume * self.data_format.total_bytes_per_element()
 
     def __str__(self) -> str:
         if self.batch_size == 1:
@@ -120,15 +106,12 @@ class MatrixShape:
 
 @dataclass(frozen=True)
 class Tile:
-    """Half-open rectangular region [row0, row1) x [col0, col1) x [batch0, batch1)."""
+    """Tile representing a submatrix with dimensions only (no position information)."""
 
     tile_id: str
-    row0: int
-    row1: int
-    col0: int
-    col1: int
-    batch0: int = 0
-    batch1: int = 1
+    num_rows: int
+    num_cols: int
+    num_batches: int = 1
     data_format: DataFormat = DataFormat()
 
     _id_counter: ClassVar[int] = 1
@@ -136,108 +119,54 @@ class Tile:
     @classmethod
     def create(
         cls,
-        row0: int,
-        row1: int,
-        col0: int,
-        col1: int,
-        batch0: int = 0,
-        batch1: int = 1,
+        num_rows: int,
+        num_cols: int,
+        num_batches: int = 1,
         *,
         prefix: str = "tile",
         data_format: Optional["DataFormat"] = None,
     ) -> "Tile":
         """Create a new tile with an auto-generated identifier."""
 
-        cls._validate_bounds(row0, row1, col0, col1, batch0, batch1)
         tile_id = f"{prefix}_{cls._id_counter}"
         cls._id_counter += 1
         return cls(
             tile_id=tile_id,
-            row0=row0,
-            row1=row1,
-            col0=col0,
-            col1=col1,
-            batch0=batch0,
-            batch1=batch1,
+            num_rows=num_rows,
+            num_cols=num_cols,
+            num_batches=num_batches,
             data_format=data_format or DataFormat()
         )
 
-    @staticmethod
-    def _validate_bounds(row0: int, row1: int, col0: int, col1: int, batch0: int = 0, batch1: int = 1) -> None:
-        if not (row0 < row1 and col0 < col1 and batch0 < batch1):
-            raise ValueError(
-                "Tile bounds must satisfy row0 < row1, col0 < col1, and batch0 < batch1: "
-                f"({row0}, {row1}, {col0}, {col1}, {batch0}, {batch1})"
-            )
-
+  
     @property
     def rows(self) -> int:
-        return self.row1 - self.row0
+        return self.num_rows
 
     @property
     def cols(self) -> int:
-        return self.col1 - self.col0
+        return self.num_cols
 
     @property
     def batches(self) -> int:
-        return self.batch1 - self.batch0
+        return self.num_batches
 
     @property
     def shape(self) -> Tuple[int, int]:
-        return self.rows, self.cols
-
-    @property
-    def shape_with_batch(self) -> Tuple[int, int, int]:
-        return self.rows, self.cols, self.batches
-
+        return self.num_rows, self.num_cols
     @property
     def area(self) -> int:
-        return self.rows * self.cols
+        return self.num_rows * self.num_cols
 
     @property
     def volume(self) -> int:
-        return self.rows * self.cols * self.batches
-
-    def intersects(self, other: "Tile") -> bool:
-        """Whether tiles intersect (half-open interval)."""
-        row_overlap = not (self.row1 <= other.row0 or other.row1 <= self.row0)
-        col_overlap = not (self.col1 <= other.col0 or other.col1 <= self.col0)
-        batch_overlap = not (self.batch1 <= other.batch0 or other.batch1 <= self.batch0)
-        return row_overlap and col_overlap and batch_overlap
-
-    def intersection(self, other: "Tile") -> Optional["Tile"]:
-        """Return the intersection region as a new tile (None if disjoint)."""
-        if not self.intersects(other):
-            return None
-        r0, r1 = max(self.row0, other.row0), min(self.row1, other.row1)
-        c0, c1 = max(self.col0, other.col0), min(self.col1, other.col1)
-        b0, b1 = max(self.batch0, other.batch0), min(self.batch1, other.batch1)
-        return Tile(
-            tile_id=f"({self.tile_id})&({other.tile_id})",
-            row0=r0,
-            row1=r1,
-            col0=c0,
-            col1=c1,
-            batch0=b0,
-            batch1=b1,
-            data_format=self.data_format
-        )
-
-    def as_tuple(self) -> Tuple[int, int, int, int]:
-        return self.row0, self.row1, self.col0, self.col1
-
-    def as_tuple_with_batch(self) -> Tuple[int, int, int, int, int, int]:
-        return self.row0, self.row1, self.col0, self.col1, self.batch0, self.batch1
-
-    def to_bytes(self) -> float:
-        """Calculate total bytes required for the tile including all data types."""
-        return self.volume * self.data_format.total_bytes_per_element()
+        return self.num_rows * self.num_cols * self.num_batches
 
     def __str__(self) -> str:
-        if self.batch0 == 0 and self.batch1 == 1:
-            return f"Tile({self.tile_id}:[{self.row0}:{self.row1},{self.col0}:{self.col1}])"
+        if self.num_batches == 1:
+            return f"Tile({self.tile_id}:{self.num_rows}×{self.num_cols})"
         else:
-            return f"Tile({self.tile_id}:[{self.row0}:{self.row1},{self.col0}:{self.col1},{self.batch0}:{self.batch1}])"
+            return f"Tile({self.tile_id}:{self.num_rows}×{self.num_cols}×{self.num_batches})"
 
 
 # ---------------------------------------------------------------------------
@@ -315,25 +244,6 @@ class ComputeDieSpec:
         assert self.output_bandwidth is not None
         return self.output_bandwidth
 
-    def scale(self, factor: float) -> "ComputeDieSpec":
-        """Return a scaled copy (useful for quick what-if experiments)."""
-        if factor <= 0:
-            raise ValueError("scale factor must be positive")
-
-        if self.shared_bandwidth is not None:
-            return ComputeDieSpec(
-                compute_power=self.compute_power * factor,
-                memory_bandwidth=self.memory_bandwidth * factor,
-                shared_bandwidth=self.shared_bandwidth * factor,
-            )
-        else:
-            return ComputeDieSpec(
-                compute_power=self.compute_power * factor,
-                input_bandwidth=self.input_bandwidth * factor if self.input_bandwidth else None,
-                output_bandwidth=self.output_bandwidth * factor if self.output_bandwidth else None,
-                memory_bandwidth=self.memory_bandwidth * factor,
-            )
-
     def __str__(self) -> str:
         if self.shared_bandwidth is not None:
             return (f"ComputeDieSpec(compute={self.compute_power}TFLOPS, "
@@ -393,14 +303,6 @@ class ComputeDie:
     @property
     def memory_bandwidth(self) -> float:
         return self.spec.memory_bandwidth
-
-    def clone(self, *, die_id: Optional[str] = None, meta: Optional[Dict[str, str]] = None) -> "ComputeDie":
-        """Create a shallow copy, optionally overriding identifier or metadata."""
-        return ComputeDie(
-            die_id=die_id or self.die_id,
-            spec=self.spec,
-            meta=dict(self.meta if meta is None else meta),
-        )
 
     def __str__(self) -> str:
         meta_str = f", meta={self.meta}" if self.meta else ""
@@ -474,7 +376,7 @@ class Chip:
 # Mapping and validation
 # ---------------------------------------------------------------------------
 
-TileAssignmentInput = Tuple[str, int, int, int, int, int, int]
+TileAssignmentInput = Tuple[str, int, int, int]  # (die_id, num_rows, num_cols, num_batches)
 
 
 @dataclass
@@ -506,35 +408,25 @@ class Mapping:
     def add_tile(
         self,
         die_id: str,
-        row0: int,
-        row1: int,
-        col0: int,
-        col1: int,
-        batch0: int = 0,
-        batch1: int = 1,
+        num_rows: int,
+        num_cols: int,
+        num_batches: int = 1,
         *,
         tile_id: Optional[str] = None,
     ) -> Tile:
-        Tile._validate_bounds(row0, row1, col0, col1, batch0, batch1)
         tile = (
             Tile(
                 tile_id=tile_id,
-                row0=row0,
-                row1=row1,
-                col0=col0,
-                col1=col1,
-                batch0=batch0,
-                batch1=batch1,
+                num_rows=num_rows,
+                num_cols=num_cols,
+                num_batches=num_batches,
                 data_format=self.matrix.data_format
             )
             if tile_id is not None
             else Tile.create(
-                row0=row0,
-                row1=row1,
-                col0=col0,
-                col1=col1,
-                batch0=batch0,
-                batch1=batch1,
+                num_rows=num_rows,
+                num_cols=num_cols,
+                num_batches=num_batches,
                 data_format=self.matrix.data_format
             )
         )
@@ -542,8 +434,8 @@ class Mapping:
         return tile
 
     def build(self, tile_data: Iterable[TileAssignmentInput]) -> None:
-        for die_id, row0, row1, col0, col1, batch0, batch1 in tile_data:
-            self.add_tile(die_id, row0, row1, col0, col1, batch0, batch1)
+        for die_id, num_rows, num_cols, num_batches in tile_data:
+            self.add_tile(die_id, num_rows, num_cols, num_batches)
 
     def _register_tile(self, die_id: str, tile: Tile) -> None:
         if die_id not in self.chip.compute_dies:
@@ -560,8 +452,6 @@ class Mapping:
     def check_all(self) -> None:
         """Execute full validation; raises ValueError on failure."""
         self._check_tiles_exist_in_placement()
-        self._check_bounds()
-        self._check_overlap_free()
         self._check_full_coverage()
 
     def _check_tiles_exist_in_placement(self) -> None:
@@ -579,33 +469,12 @@ class Mapping:
             missing = set(self.tiles.keys()) - seen
             raise ValueError(f"Unassigned tiles exist: {sorted(missing)}")
 
-    def _check_bounds(self) -> None:
-        for tile in self.tiles.values():
-            if not self.matrix.fits(tile):
-                raise ValueError(
-                    "Tile out of bounds or illegal range: "
-                    f"{tile.tile_id} -> ({tile.row0}:{tile.row1}, {tile.col0}:{tile.col1}, {tile.batch0}:{tile.batch1})"
-                )
-
-    def _check_overlap_free(self) -> None:
-        items = list(self.tiles.values())
-        n = len(items)
-        for i in range(n):
-            for j in range(i + 1, n):
-                if items[i].intersects(items[j]):
-                    inter = items[i].intersection(items[j])
-                    if inter is not None:
-                        raise ValueError(
-                            f"Tile overlap: {items[i].tile_id} intersects with {items[j].tile_id} at "
-                            f"[{inter.row0}:{inter.row1}, {inter.col0}:{inter.col1}, {inter.batch0}:{inter.batch1}]"
-                        )
-
     def _check_full_coverage(self) -> None:
         total = sum(t.volume for t in self.tiles.values())
         if total != self.matrix.volume:
             raise ValueError(
                 "Coverage volume not equal to matrix volume: "
-                f"tiles={total}, matrix={self.matrix.volume}, may have holes or out of bounds"
+                f"tiles={total}, matrix={self.matrix.volume}"
             )
 
     # ----------
@@ -638,7 +507,7 @@ class Mapping:
             if tiles:
                 tile_info = []
                 for tile in tiles:
-                    tile_info.append(f"{tile.rows}×{tile.cols}×{tile.batches}")
+                    tile_info.append(f"{tile.num_rows}×{tile.num_cols}×{tile.num_batches}")
                 print(f"  {die_id}: {', '.join(tile_info)}")
             else:
                 print(f"  {die_id}: (empty)")

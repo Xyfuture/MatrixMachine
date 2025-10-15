@@ -48,9 +48,9 @@ def main():
     # Create chip and strategy
     chip = create_h2llm_chip(die_count=8)
     strategy = AgentGridSearchStrategy(
-        num_split_row_candidates=[1,2,4,6,8],
-        num_split_col_candidates=[1,2,4,6,8],
-        max_iterations=2
+        num_split_row_candidates=[1,2,3,4,5,6,7,8],
+        num_split_col_candidates=[1,2,3,4,5,6,7,8],
+        max_iterations=1
     )
     batch_size = 16
 

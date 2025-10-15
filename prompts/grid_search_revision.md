@@ -1,0 +1,1 @@
+帮我修改一下 @matrixmachine/core/description.py 文件, 更改一下 tile 的部分, 现在的 tile 设计中, 需要记录精确的记录其来自于那两行 col 和 row 之间, 但是对于更改灵活的表达方式而言, 不需要精确其来自于那一个 col 和 row 之间, 只需要知道每个tile 的 num_cols 和 num_rows 的值就可以了, 不需要额外记录是从哪里开始到哪里结束的. 修改完之后要同步这个改动, 首先改善 description.py 中各类 check, 如果不能 check 的就不要 check 了,可以做的简单一些. 除了 description.py, 所有用到这个文件的地方都要同步这个修改的结果, 让@agent_test.py 能跑起来

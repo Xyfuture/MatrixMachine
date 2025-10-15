@@ -28,9 +28,10 @@ Key algorithm from paper (Section 4.2):
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from math import sqrt
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from ..core.description import Chip, Mapping, MatrixShape
 from ..core.sim_engine import simulate
@@ -96,26 +97,27 @@ class H2LLMTilingStrategy:
         load_bandwidth = die_spec.get_input_bandwidth()  # GB/s
         store_bandwidth = die_spec.get_output_bandwidth()    # GB/s
 
-        M = matrix_shape.rows
+        M = 0 
+        K = matrix_shape.rows
         N = matrix_shape.cols
         batch_size = matrix_shape.batch_size
         C = len(chip.compute_dies)
 
-        logger.info(f"H2-LLM Mapping: Matrix {M}×{N}×{batch_size}, {C} compute dies")
-        logger.info(f"  Load BW: {load_bandwidth} GB/s, Store BW: {store_bandwidth} GB/s")
+        logger.debug(f"H2-LLM Mapping: Matrix {M}×{N}×{batch_size}, {C} compute dies")
+        logger.debug(f"  Load BW: {load_bandwidth} GB/s, Store BW: {store_bandwidth} GB/s")
 
         # For GEMM: Input (M, K) × Weight (K, N) = Output (M, N)
         # We treat the matrix as M×N, where:
-        # - M is the batch/row dimension (not split to avoid weight duplication)
-        # - K would be the reduction dimension (we use cols as proxy)
+        # - M is the batch dimension (not split to avoid weight duplication)
+        # - K would be the reduction dimension
         # - N is the output feature dimension (can be split)
 
         # Calculate optimal tiling factors using H2-LLM's analytical model
-        K = N  # Use N as the feature dimension for tiling
         T_K, T_N = self._calculate_optimal_tiling(M, K, N, C, load_bandwidth, store_bandwidth)
+        # T_K, T_N = self._calculate_optimal_tiling_h2_paper(M, K, N, C, load_bandwidth, store_bandwidth)
 
-        logger.info(f"  Optimal tiling factors: T_K={T_K}, T_N={T_N}")
-        logger.info(f"  This creates {T_K * T_N} tiles across {C} channels")
+        logger.debug(f"  Optimal tiling factors: T_K={T_K}, T_N={T_N}")
+        logger.debug(f"  This creates {T_K * T_N} tiles across {C} channels")
 
         # Create the mapping with calculated tiling
         mapping = self._create_tiled_mapping(matrix_shape, chip, T_K, T_N)
@@ -123,7 +125,7 @@ class H2LLMTilingStrategy:
         # Validate the mapping
         try:
             mapping.check_all()
-            logger.info("  Mapping validation successful")
+            logger.debug("  Mapping validation successful")
         except Exception as e:
             logger.error(f"  Mapping validation failed: {e}")
             raise
@@ -153,7 +155,7 @@ class H2LLMTilingStrategy:
             result = MappingResult(mapping=mapping, latency=latency)
             utilization = result.get_compute_utilization()
 
-            logger.info(f"  Simulation complete: latency={latency:.2f}, utilization={utilization:.2%}")
+            logger.debug(f"  Simulation complete: latency={latency:.2f}, utilization={utilization:.2%}")
 
             return result
         except Exception as e:
@@ -224,6 +226,81 @@ class H2LLMTilingStrategy:
 
         return T_K, T_N
 
+    def _calculate_optimal_tiling_h2_paper(
+        self,
+        M: int,
+        K: int,
+        N: int,
+        C: int,
+        load_bandwidth: float,
+        store_bandwidth: float,
+    ) -> Tuple[int, int]:
+        """Calculate optimal tiling factors using H2-LLM's original algorithm from nmp_evaluator.py.
+
+        This implements the exact algorithm from the H2-LLM paper's evaluator code,
+        which uses a different approach based on GCD calculation and factor analysis.
+
+        The algorithm:
+        1. Assume batch size = 1 (always B == 1 case)
+        2. Find optimal K dimension divisor using factor analysis
+        3. Calculate corresponding N dimension divisor
+
+        Args:
+            M: M dimension (rows, batch dimension - not used in calculation)
+            K: K dimension (reduction)
+            N: N dimension (columns)
+            C: Number of compute channels
+            load_bandwidth: Input/load bandwidth per channel (not used in original algorithm)
+            store_bandwidth: Output/store bandwidth per channel (not used in original algorithm)
+
+        Returns:
+            Tuple of (K_dim_divisor, N_dim_divisor) tiling factors
+        """
+
+
+        per_gemm_channel_num = C
+
+        # Step 2: Find optimal K dimension divisor using factor analysis (line 67)
+        optimal_K_dim_divisor = self._find_closest_factor(
+            per_gemm_channel_num,
+            math.sqrt(K * per_gemm_channel_num*load_bandwidth / (N*store_bandwidth))
+        )
+
+        # Step 3: Calculate corresponding N dimension divisor (line 68)
+        optimal_N_dim_divisor = per_gemm_channel_num // optimal_K_dim_divisor
+
+        # Validate the allocation (line 69)
+        assert optimal_K_dim_divisor * optimal_N_dim_divisor == per_gemm_channel_num, \
+            "Wrong dim divisor allocation"
+
+        logger.debug(f"    H2-paper algorithm: per_gemm_channel_num={per_gemm_channel_num}")
+        logger.debug(f"    Load BW: {load_bandwidth}, Store BW: {store_bandwidth} (not used in original)")
+        logger.debug(f"    Optimal divisors: K={optimal_K_dim_divisor}, N={optimal_N_dim_divisor}")
+
+        return optimal_K_dim_divisor, optimal_N_dim_divisor
+
+    def _find_closest_factor(self, n: int, target: float) -> int:
+        """Find the factor of n that is closest to the target value.
+
+        This implements the get_factors and find_closest functions from nmp_evaluator.py.
+
+        Args:
+            n: The number to find factors of
+            target: The target value to find the closest factor to
+
+        Returns:
+            The factor of n that is closest to target
+        """
+        # Get all factors of n (lines 7-13 from nmp_evaluator.py)
+        factors = set()
+        for i in range(1, int(math.isqrt(n)) + 1):
+            if n % i == 0:
+                factors.add(i)
+                factors.add(n // i)
+
+        # Find the factor closest to target (line 16-17 from nmp_evaluator.py)
+        return min(factors, key=lambda x: abs(x - target))
+
     def _create_tiled_mapping(
         self,
         matrix_shape: MatrixShape,
@@ -272,7 +349,8 @@ class H2LLMTilingStrategy:
             for c0, c1 in col_bounds:
                 for b0, b1 in batch_bounds:
                     die_id = die_ids[tile_idx % num_dies]
-                    mapping.add_tile(die_id, r0, r1, c0, c1, b0, b1)
+                    # add_tile expects dimensions (num_rows, num_cols, num_batches), not boundaries
+                    mapping.add_tile(die_id, r1 - r0, c1 - c0, b1 - b0)
                     tile_idx += 1
 
         logger.debug(f"    Created {tile_idx} tiles distributed across {num_dies} dies")
@@ -312,45 +390,3 @@ class H2LLMTilingStrategy:
 
         return bounds
 
-
-@dataclass
-class H2LLMDataCentricStrategy:
-    """H2-LLM's data-centric dataflow abstraction (Section 5).
-
-    This implements the more advanced dataflow exploration from the paper,
-    including:
-    - Memory Access Group (MAG) partition
-    - Memory Partition Group (MPG) extraction
-    - Operator-channel binding with operator fission support
-    - Prefill-aware mapping exploration
-
-    Note: This is a placeholder for the full data-centric dataflow abstraction.
-    The complete implementation would require operator graph analysis and
-    heterogeneous execution mapping between centralized processors and NMP PEs.
-    """
-
-    tiling_strategy: H2LLMTilingStrategy = field(default_factory=H2LLMTilingStrategy)
-
-    def find_optimal_mapping(
-        self,
-        matrix_shape: MatrixShape,
-        chip: Chip,
-    ) -> Optional[MappingResult]:
-        """Find optimal mapping using data-centric dataflow abstraction.
-
-        Currently delegates to the basic tiling strategy. A full implementation
-        would include:
-        1. MAG partition based on operator dependencies
-        2. GCMap (Group-Channel Mapping) for MPGs
-        3. OCMap (Operator-Channel Mapping) for operator tiers
-        4. Operator fission when assigned to both normal and NMP channels
-
-        Args:
-            matrix_shape: Matrix dimensions
-            chip: Chip configuration
-
-        Returns:
-            MappingResult with optimal mapping and performance
-        """
-        logger.info("H2-LLM Data-Centric Strategy: Using analytical tiling")
-        return self.tiling_strategy.find_optimal_mapping(matrix_shape, chip)

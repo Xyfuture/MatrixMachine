@@ -46,7 +46,10 @@ class TrivialTilingStrategy:
             for col0, col1 in col_bounds:
                 for batch0, batch1 in batch_bounds:
                     die_id = die_ids[tile_index % len(die_ids)]
-                    mapping.add_tile(die_id, row0, row1, col0, col1, batch0=batch0, batch1=batch1)
+                    num_rows = row1 - row0
+                    num_cols = col1 - col0
+                    num_batches = batch1 - batch0
+                    mapping.add_tile(die_id, num_rows, num_cols, num_batches)
                     tile_index += 1
 
         mapping.check_all()
